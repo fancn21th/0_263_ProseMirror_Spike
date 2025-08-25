@@ -37,21 +37,12 @@ const ProseMirrorEditor = () => {
     const tempDiv = document.createElement("div");
     tempDiv.innerHTML = initialContent;
 
-    const doc = DOMParser.fromSchema(mySchema).parse(tempDiv);
-
-    // 创建编辑器状态
-    const state = EditorState.create({
-      doc,
-      plugins: exampleSetup({ schema: mySchema, menuBar: false }),
-    });
-
     // 创建编辑器视图
     const view = new EditorView(editorRef.current, {
-      state,
-      dispatchTransaction(transaction) {
-        const newState = view.state.apply(transaction);
-        view.updateState(newState);
-      },
+      state: EditorState.create({
+        doc: DOMParser.fromSchema(mySchema).parse(tempDiv),
+        plugins: exampleSetup({ schema: mySchema }),
+      }),
     });
 
     viewRef.current = view;
