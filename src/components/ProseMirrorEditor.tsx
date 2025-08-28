@@ -3,7 +3,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { EditorState } from "prosemirror-state";
 import { EditorView } from "prosemirror-view";
-import { Schema } from "prosemirror-model";
+import { Schema, DOMParser } from "prosemirror-model";
 import { keymap } from "prosemirror-keymap";
 import { baseKeymap } from "prosemirror-commands";
 import { toggleMark } from "prosemirror-commands";
@@ -150,8 +150,23 @@ const ProseMirrorPage: React.FC = () => {
 
     // 1. 文本编辑器
     if (textEditorRef.current) {
+      // 方法1: 直接使用节点构造函数（原来的方法）
+      // const textState = EditorState.create({
+      //   doc: textSchema.node("doc", null, textSchema.text("Edit me!")),
+      //   plugins: [keymap(baseKeymap)],
+      // });
+
+      // 方法2: 使用字符串通过 DOMParser 解析
+      const htmlString =
+        "<div>Hello from string! You can edit this text.</div>";
+      const tempDiv = document.createElement("div");
+      tempDiv.innerHTML = htmlString;
+
+      // 使用 DOMParser 将 HTML 转换为 ProseMirror 文档
+      const parsedDoc = DOMParser.fromSchema(textSchema).parse(tempDiv);
+
       const textState = EditorState.create({
-        doc: textSchema.node("doc", null, textSchema.text("Edit me!")),
+        doc: parsedDoc,
         plugins: [keymap(baseKeymap)],
       });
 
@@ -163,19 +178,37 @@ const ProseMirrorPage: React.FC = () => {
     // 2. 笔记编辑器
     if (noteEditorRef.current) {
       const noteKeymap = keymap({
-        "Ctrl-Space": makeNoteGroup,
+        "Mod-Space": makeNoteGroup, // Mod 在 Mac 上是 Cmd，在 Windows/Linux 上是 Ctrl
         ...baseKeymap,
       });
 
+      // 方法1: 直接使用节点构造函数（原来的方法）
+      // const noteState = EditorState.create({
+      //   doc: noteSchema.node("doc", null, [
+      //     noteSchema.node("note", null, noteSchema.text("First note")),
+      //     noteSchema.node("note", null, noteSchema.text("Second note")),
+      //   ]),
+      //   plugins: [noteKeymap],
+      // });
+
+      // 方法2: 使用 HTML 字符串解析
+      const htmlString = `
+        <div>
+          <div class="note">First note from string</div>
+          <div class="note">Second note from string</div>
+          <div class="notegroup">
+            <div class="note">Grouped note 1</div>
+            <div class="note">Grouped note 2</div>
+          </div>
+        </div>
+      `;
+
+      const tempDiv = document.createElement("div");
+      tempDiv.innerHTML = htmlString;
+      const parsedNoteDoc = DOMParser.fromSchema(noteSchema).parse(tempDiv);
+
       const noteState = EditorState.create({
-        doc: noteSchema.node("doc", null, [
-          noteSchema.node("note", null, noteSchema.text("First note")),
-          noteSchema.node("note", null, noteSchema.text("Second note")),
-          noteSchema.node("notegroup", null, [
-            noteSchema.node("note", null, noteSchema.text("Grouped note 1")),
-            noteSchema.node("note", null, noteSchema.text("Grouped note 2")),
-          ]),
-        ]),
+        doc: parsedNoteDoc,
         plugins: [noteKeymap],
       });
 
@@ -187,9 +220,9 @@ const ProseMirrorPage: React.FC = () => {
     // 3. 星号编辑器
     if (starEditorRef.current) {
       const starKeymap = keymap({
-        "Ctrl-b": toggleMark(starSchema.marks.shouting),
-        "Ctrl-q": toggleLink,
-        "Ctrl-Space": insertStar,
+        "Mod-b": toggleMark(starSchema.marks.shouting), // Cmd+B 在 Mac 上
+        "Mod-q": toggleLink, // Cmd+Q 在 Mac 上
+        "Mod-Space": insertStar, // Cmd+Space 在 Mac 上
         ...baseKeymap,
       });
 
@@ -284,7 +317,8 @@ const ProseMirrorPage: React.FC = () => {
             <h2 className="text-xl font-semibold mb-4">Simple Text Schema</h2>
             <p className="text-gray-600 mb-4">
               The most simple schema possible allows the document to be composed
-              just of text.
+              just of text. This example shows how to initialize a document from
+              an HTML string.
             </p>
 
             <div className="border rounded-lg p-4 mb-4">
@@ -295,15 +329,30 @@ const ProseMirrorPage: React.FC = () => {
             </div>
 
             <div className="bg-gray-50 rounded-lg p-4">
-              <h3 className="font-semibold mb-2">Schema Definition:</h3>
-              <pre className="text-sm text-gray-800 overflow-x-auto">
-                {`const textSchema = new Schema({
-  nodes: {
-    text: {},
-    doc: {content: "text*"}
-  }
-})`}
-              </pre>
+              <h3 className="font-semibold mb-2">两种初始化方法:</h3>
+              <div className="space-y-4">
+                <div>
+                  <h4 className="font-medium text-sm mb-1">
+                    方法1: 直接构造节点对象
+                  </h4>
+                  <pre className="text-xs text-gray-800 overflow-x-auto bg-white p-2 rounded">
+                    {`const doc = textSchema.node("doc", null,
+  textSchema.text("Edit me!")
+)`}
+                  </pre>
+                </div>
+                <div>
+                  <h4 className="font-medium text-sm mb-1">
+                    方法2: 解析 HTML 字符串 (当前使用)
+                  </h4>
+                  <pre className="text-xs text-gray-800 overflow-x-auto bg-white p-2 rounded">
+                    {`const htmlString = "<div>Hello from string!</div>";
+const tempDiv = document.createElement("div");
+tempDiv.innerHTML = htmlString;
+const doc = DOMParser.fromSchema(schema).parse(tempDiv);`}
+                  </pre>
+                </div>
+              </div>
             </div>
           </div>
         )}
@@ -316,9 +365,10 @@ const ProseMirrorPage: React.FC = () => {
             </h2>
             <p className="text-gray-600 mb-4">
               This schema consists of notes that can optionally be grouped with
-              group nodes. Press{" "}
+              group nodes. This example demonstrates parsing HTML strings with
+              custom node types. Press{" "}
               <kbd className="px-2 py-1 bg-gray-200 rounded text-xs">
-                Ctrl+Space
+                Cmd+Space
               </kbd>{" "}
               to group selected notes.
             </p>
@@ -331,11 +381,25 @@ const ProseMirrorPage: React.FC = () => {
             </div>
 
             <div className="bg-gray-50 rounded-lg p-4">
-              <h3 className="font-semibold mb-2">Features:</h3>
+              <h3 className="font-semibold mb-2">从 HTML 字符串初始化:</h3>
+              <pre className="text-xs text-gray-800 overflow-x-auto bg-white p-2 rounded mb-2">
+                {`const htmlString = \`
+  <div>
+    <div class="note">First note from string</div>
+    <div class="note">Second note from string</div>
+    <div class="notegroup">
+      <div class="note">Grouped note 1</div>
+      <div class="note">Grouped note 2</div>
+    </div>
+  </div>
+\`;
+const doc = DOMParser.fromSchema(noteSchema).parse(tempDiv);`}
+              </pre>
+              <h3 className="font-semibold mb-2 mt-4">Features:</h3>
               <ul className="text-sm text-gray-700 space-y-1">
                 <li>• Individual notes with custom DOM representation</li>
                 <li>• Note groups that contain multiple notes</li>
-                <li>• Custom command to wrap notes in groups (Ctrl+Space)</li>
+                <li>• Custom command to wrap notes in groups (Cmd+Space)</li>
                 <li>• Enter/Backspace work to create and manage notes</li>
               </ul>
             </div>
@@ -360,19 +424,19 @@ const ProseMirrorPage: React.FC = () => {
               <div className="text-sm text-blue-700 space-y-1">
                 <div>
                   <kbd className="px-2 py-1 bg-white rounded text-xs">
-                    Ctrl/Cmd+Space
+                    Cmd+Space
                   </kbd>{" "}
                   - Insert a star
                 </div>
                 <div>
                   <kbd className="px-2 py-1 bg-white rounded text-xs">
-                    Ctrl/Cmd+B
+                    Cmd+B
                   </kbd>{" "}
                   - Toggle shouting
                 </div>
                 <div>
                   <kbd className="px-2 py-1 bg-white rounded text-xs">
-                    Ctrl/Cmd+Q
+                    Cmd+Q
                   </kbd>{" "}
                   - Add/remove link
                 </div>
