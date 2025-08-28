@@ -2,7 +2,14 @@ import type { NextConfig } from "next";
 import path from "path";
 
 const nextConfig: NextConfig = {
-  transpilePackages: ["prosemirror-model"],
+  // transpilePackages: [
+  //   "prosemirror-model",
+  //   "prosemirror-schema-list",
+  //   "prosemirror-schema-basic",
+  //   "prosemirror-state",
+  //   "prosemirror-view",
+  //   "prosemirror-example-setup",
+  // ],
 
   webpack(config, { dev }) {
     // 添加别名来解析本地源代码
@@ -16,13 +23,31 @@ const nextConfig: NextConfig = {
         __dirname,
         "../prosemirror/prosemirror-model/src"
       ),
+      "prosemirror-schema-list": path.resolve(
+        __dirname,
+        "../prosemirror/prosemirror-schema-list/src"
+      ),
+      "prosemirror-schema-basic": path.resolve(
+        __dirname,
+        "../prosemirror/prosemirror-schema-basic/src"
+      ),
+      "prosemirror-state": path.resolve(
+        __dirname,
+        "../prosemirror/prosemirror-state/src"
+      ),
+      "prosemirror-view": path.resolve(
+        __dirname,
+        "../prosemirror/prosemirror-view/src"
+      ),
+      "prosemirror-example-setup": path.resolve(
+        __dirname,
+        "../prosemirror/prosemirror-example-setup/src"
+      ),
+      "prosemirror-markdown": path.resolve(
+        __dirname,
+        "../prosemirror/prosemirror-markdown/src"
+      ),
     };
-
-    // 添加对 .markdown 文件的支持
-    config.module.rules.push({
-      test: /\.markdown$/,
-      use: "raw-loader",
-    });
 
     // 开发模式下启用源映射和文件监听
     if (dev) {

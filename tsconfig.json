@@ -20,7 +20,17 @@
     "baseUrl": ".",
     "paths": {
       "@/*": ["./src/*"],
-      "prosemirror-model": ["../prosemirror/prosemirror-model/src"]
+      "prosemirror-model": ["../prosemirror/prosemirror-model/src"],
+      "prosemirror-schema-list": ["../prosemirror/prosemirror-schema-list/src"],
+      "prosemirror-schema-basic": [
+        "../prosemirror/prosemirror-schema-basic/src"
+      ],
+      "prosemirror-state": ["../prosemirror/prosemirror-state/src"],
+      "prosemirror-view": ["../prosemirror/prosemirror-view/src"],
+      "prosemirror-example-setup": [
+        "../prosemirror/prosemirror-example-setup/src"
+      ],
+      "prosemirror-markdown": ["../prosemirror/prosemirror-markdown/src"]
     },
     "target": "ES2017"
   },
@@ -29,7 +39,13 @@
     "**/*.ts",
     "**/*.tsx",
     ".next/types/**/*.ts",
-    "../prosemirror/prosemirror-model/src/**/*.ts"
+    "../prosemirror/prosemirror-model/src/**/*.ts",
+    "../prosemirror/prosemirror-schema-list/src/**/*.ts",
+    "../prosemirror/prosemirror-schema-basic/src/**/*.ts",
+    "../prosemirror/prosemirror-state/src/**/*.ts",
+    "../prosemirror/prosemirror-view/src/**/*.ts",
+    "../prosemirror/prosemirror-example-setup/src/**/*.ts",
+    "../prosemirror/prosemirror-markdown/src/**/*.ts"
   ],
   "exclude": ["node_modules"]
 }
