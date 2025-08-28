@@ -28,36 +28,78 @@ function searchHighlightPlugin(searchTerm: string) {
 
         const decorations: Decoration[] = [];
         const doc = tr.doc;
-        const regex = new RegExp(
-          searchTerm.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
-          "gi"
-        );
-        const highlightedNodes = new Set<number>(); // 记录已经高亮的节点位置
+        const searchText = searchTerm.toLowerCase().trim();
 
-        // 遍历文档查找匹配的文本
+        // 获取文档的纯文本内容和位置映射
+        let fullText = "";
+        const positionMap: Array<{
+          textPos: number;
+          docPos: number;
+          nodePos: number;
+          nodeEnd: number;
+        }> = [];
+
         doc.descendants((node, pos) => {
-          if (node.isText) {
-            const text = node.text || "";
-            if (regex.test(text)) {
-              // 找到包含此文本节点的父节点
-              const $pos = doc.resolve(pos);
+          if (node.isText && node.text) {
+            const startTextPos = fullText.length;
+            fullText += node.text;
+
+            // 为每个字符记录其在文档中的位置
+            for (let i = 0; i < node.text.length; i++) {
+              positionMap.push({
+                textPos: startTextPos + i,
+                docPos: pos + i,
+                nodePos: pos,
+                nodeEnd: pos + node.text.length,
+              });
+            }
+          }
+        });
+
+        // 在完整文本中搜索
+        const lowerFullText = fullText.toLowerCase();
+        let searchIndex = 0;
+
+        while (
+          (searchIndex = lowerFullText.indexOf(searchText, searchIndex)) !== -1
+        ) {
+          const matchStart = searchIndex;
+          const matchEnd = searchIndex + searchText.length - 1;
+
+          if (
+            matchStart < positionMap.length &&
+            matchEnd < positionMap.length
+          ) {
+            // 找到匹配范围涉及的所有节点
+            const affectedNodes = new Set<string>();
+
+            // 收集所有涉及的节点
+            for (let i = matchStart; i <= matchEnd; i++) {
+              if (i < positionMap.length) {
+                const mapping = positionMap[i];
+                const nodeKey = `${mapping.nodePos}-${mapping.nodeEnd}`;
+                affectedNodes.add(nodeKey);
+              }
+            }
+
+            // 为每个受影响的节点创建高亮装饰
+            affectedNodes.forEach((nodeKey) => {
+              const [nodeStart] = nodeKey.split("-").map(Number);
+              // 找到节点的父级范围进行高亮
+              const $pos = doc.resolve(nodeStart);
               const parentStart = $pos.start($pos.depth);
               const parentEnd = $pos.end($pos.depth);
 
-              // 防止重复添加同一个节点的装饰
-              if (!highlightedNodes.has(parentStart)) {
-                highlightedNodes.add(parentStart);
-                decorations.push(
-                  Decoration.inline(parentStart, parentEnd, {
-                    class: "search-highlight-node",
-                  })
-                );
-              }
-            }
-            // 重置正则表达式的 lastIndex
-            regex.lastIndex = 0;
+              decorations.push(
+                Decoration.inline(parentStart, parentEnd, {
+                  class: "search-highlight-node",
+                })
+              );
+            });
           }
-        });
+
+          searchIndex++;
+        }
 
         return DecorationSet.create(doc, decorations);
       },
@@ -106,6 +148,7 @@ const ProseMirrorEditor = () => {
         <li>使用 <strong>Ctrl+Y</strong> 重做操作</li>
       </ul>
       <p>开始编辑这段文本试试吧！在上面的搜索框中输入文字来测试搜索高亮功能。</p>
+      <p>测试跨节点搜索：<strong>跨越</strong>多个<em>节点</em>的文本搜索。</p>
     `;
 
     const tempDiv = document.createElement("div");
@@ -161,9 +204,14 @@ const ProseMirrorEditor = () => {
             className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
           />
           {searchTerm && (
-            <p className="text-sm text-gray-500 mt-1">
-              搜索: &quot;{searchTerm}&quot; - 匹配的文本将以黄色背景高亮显示
-            </p>
+            <div className="text-sm text-gray-500 mt-1 space-y-1">
+              <p>
+                搜索: &quot;{searchTerm}&quot; - 匹配的节点将以黄色背景高亮显示
+              </p>
+              <p className="text-xs">
+                💡 支持跨节点搜索，试试搜索 &quot;跨越多个节点&quot;
+              </p>
+            </div>
           )}
         </div>
       </div>
