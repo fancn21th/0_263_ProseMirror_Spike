@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useRef } from "react";
-import { EditorState } from "prosemirror-state";
-import { EditorView } from "prosemirror-view";
+import { useEffect, useRef, useState } from "react";
+import { EditorState, Plugin } from "prosemirror-state";
+import { EditorView, Decoration, DecorationSet } from "prosemirror-view";
 import { Schema, DOMParser } from "prosemirror-model";
 import { schema } from "prosemirror-schema-basic";
 import { addListNodes } from "prosemirror-schema-list";
@@ -14,9 +14,83 @@ const mySchema = new Schema({
   marks: schema.spec.marks,
 });
 
+// 搜索高亮插件
+function searchHighlightPlugin(searchTerm: string) {
+  return new Plugin({
+    state: {
+      init() {
+        return DecorationSet.empty;
+      },
+      apply(tr) {
+        if (!searchTerm.trim()) {
+          return DecorationSet.empty;
+        }
+
+        const decorations: Decoration[] = [];
+        const doc = tr.doc;
+        const regex = new RegExp(
+          searchTerm.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
+          "gi"
+        );
+        const highlightedNodes = new Set<number>(); // 记录已经高亮的节点位置
+
+        // 遍历文档查找匹配的文本
+        doc.descendants((node, pos) => {
+          if (node.isText) {
+            const text = node.text || "";
+            if (regex.test(text)) {
+              // 找到包含此文本节点的父节点
+              const $pos = doc.resolve(pos);
+              const parentStart = $pos.start($pos.depth);
+              const parentEnd = $pos.end($pos.depth);
+
+              // 防止重复添加同一个节点的装饰
+              if (!highlightedNodes.has(parentStart)) {
+                highlightedNodes.add(parentStart);
+                decorations.push(
+                  Decoration.inline(parentStart, parentEnd, {
+                    class: "search-highlight-node",
+                  })
+                );
+              }
+            }
+            // 重置正则表达式的 lastIndex
+            regex.lastIndex = 0;
+          }
+        });
+
+        return DecorationSet.create(doc, decorations);
+      },
+    },
+    props: {
+      decorations(state) {
+        return this.getState(state);
+      },
+    },
+  });
+}
+
 const ProseMirrorEditor = () => {
   const editorRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
+  const [searchTerm, setSearchTerm] = useState("");
+
+  // 更新编辑器的搜索高亮
+  const updateSearch = (term: string) => {
+    if (!viewRef.current) return;
+
+    const { state } = viewRef.current;
+
+    // 重新创建编辑器状态，用新的搜索插件替换旧的
+    const basePlugins = exampleSetup({ schema: mySchema });
+    const newState = EditorState.create({
+      doc: state.doc,
+      plugins: [...basePlugins, searchHighlightPlugin(term)],
+      selection: state.selection,
+    });
+
+    viewRef.current.updateState(newState);
+  };
 
   useEffect(() => {
     if (!editorRef.current) return;
@@ -31,17 +105,20 @@ const ProseMirrorEditor = () => {
         <li>使用 <strong>Ctrl+Z</strong> 撤销操作</li>
         <li>使用 <strong>Ctrl+Y</strong> 重做操作</li>
       </ul>
-      <p>开始编辑这段文本试试吧！</p>
+      <p>开始编辑这段文本试试吧！在上面的搜索框中输入文字来测试搜索高亮功能。</p>
     `;
 
     const tempDiv = document.createElement("div");
     tempDiv.innerHTML = initialContent;
 
-    // 创建编辑器视图
+    // 创建编辑器视图，初始时包含搜索插件
     const view = new EditorView(editorRef.current, {
       state: EditorState.create({
         doc: DOMParser.fromSchema(mySchema).parse(tempDiv),
-        plugins: exampleSetup({ schema: mySchema }),
+        plugins: [
+          ...exampleSetup({ schema: mySchema }),
+          searchHighlightPlugin(""),
+        ],
       }),
     });
 
@@ -55,17 +132,71 @@ const ProseMirrorEditor = () => {
     };
   }, []);
 
+  // 处理搜索输入变化
+  const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const term = e.target.value;
+    setSearchTerm(term);
+    updateSearch(term);
+  };
+
   return (
     <div className="prose-mirror-container">
       <div className="mb-4">
         <h3 className="text-lg font-medium text-gray-700 mb-2">富文本编辑器</h3>
+
+        {/* 搜索框 */}
+        <div className="mb-4">
+          <label
+            htmlFor="search"
+            className="block text-sm font-medium text-gray-700 mb-2"
+          >
+            搜索并高亮文本
+          </label>
+          <input
+            id="search"
+            type="text"
+            value={searchTerm}
+            onChange={handleSearchChange}
+            placeholder="输入要搜索的文字..."
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+          />
+          {searchTerm && (
+            <p className="text-sm text-gray-500 mt-1">
+              搜索: &quot;{searchTerm}&quot; - 匹配的文本将以黄色背景高亮显示
+            </p>
+          )}
+        </div>
       </div>
 
-      <div ref={editorRef} className="editor-container focus:outline-none" />
+      <div
+        ref={editorRef}
+        className="editor-container focus:outline-none border border-gray-300 rounded p-4 min-h-[200px]"
+      />
 
       <div className="mt-4 text-xs text-gray-400">
-        <p>💡 提示：这个编辑器支持 Markdown 风格的快捷键和丰富的格式化选项</p>
+        <p>
+          💡
+          提示：这个编辑器支持实时搜索和高亮功能，在上方搜索框中输入文字试试看
+        </p>
       </div>
+
+      {/* 添加搜索高亮样式 */}
+      <style jsx>{`
+        :global(.search-highlight-node) {
+          background: #fef08a;
+          color: #92400e;
+          padding: 2px 4px;
+          border-radius: 4px;
+          font-weight: 500;
+          border: 2px solid #f59e0b;
+          margin: 1px 0;
+          display: inline-block;
+        }
+
+        :global(.ProseMirror) {
+          outline: none;
+        }
+      `}</style>
     </div>
   );
 };
