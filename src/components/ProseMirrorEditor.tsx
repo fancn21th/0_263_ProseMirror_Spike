@@ -5,7 +5,7 @@ import { EditorState } from "prosemirror-state";
 import { EditorView } from "prosemirror-view";
 import { exampleSetup } from "prosemirror-example-setup";
 import { defaultMarkdownParser } from "prosemirror-markdown";
-import { Schema, DOMParser } from "prosemirror-model";
+import { Schema, DOMParser, Node } from "prosemirror-model";
 
 // The supported types of dinosaurs.
 const dinos = [
@@ -27,7 +27,7 @@ const dinoNodeSpec = {
 
   // These nodes are rendered as images with a `dino-type` attribute.
   // There are pictures for all dino types under /img/dino/.
-  toDOM: (node: any) =>
+  toDOM: (node: Node) =>
     [
       "img",
       {
@@ -44,9 +44,9 @@ const dinoNodeSpec = {
   parseDOM: [
     {
       tag: "img[dino-type]",
-      getAttrs: (dom: any) => {
+      getAttrs: (dom: HTMLElement) => {
         const type = dom.getAttribute("dino-type");
-        return dinos.indexOf(type) > -1 ? { type } : false;
+        return dinos.indexOf(type || "") > -1 ? { type } : false;
       },
     },
   ],
