@@ -1,5 +1,4 @@
 import ProseMirrorEditor from "@/components/ProseMirrorEditor";
-import "./editor.css";
 
 export default function Home() {
   return (

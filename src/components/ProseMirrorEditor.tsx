@@ -1,151 +1,485 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { EditorState } from "prosemirror-state";
 import { EditorView } from "prosemirror-view";
-import { exampleSetup } from "prosemirror-example-setup";
-import { defaultMarkdownParser } from "prosemirror-markdown";
-import { Schema, DOMParser, Node } from "prosemirror-model";
+import { Schema } from "prosemirror-model";
+import { keymap } from "prosemirror-keymap";
+import { baseKeymap } from "prosemirror-commands";
+import { toggleMark } from "prosemirror-commands";
+import { findWrapping } from "prosemirror-transform";
 
-// The supported types of dinosaurs.
-const dinos = [
-  "brontosaurus",
-  "stegosaurus",
-  "triceratops",
-  "tyrannosaurus",
-  "pterodactyl",
-];
+// 1. 最简单的文本 Schema
+const textSchema = new Schema({
+  nodes: {
+    text: {},
+    doc: { content: "text*" },
+  },
+});
 
-const dinoNodeSpec = {
-  // Dinosaurs have one attribute, their type, which must be one of
-  // the types defined above.
-  // Brontosaurs are still the default dino.
-  attrs: { type: { default: "brontosaurus" } },
-  inline: true,
-  group: "inline",
-  draggable: true,
-
-  // These nodes are rendered as images with a `dino-type` attribute.
-  // There are pictures for all dino types under /img/dino/.
-  toDOM: (node: Node) =>
-    [
-      "img",
-      {
-        "dino-type": node.attrs.type,
-        src: "/img/dino/" + node.attrs.type + ".png",
-        title: node.attrs.type,
-        class: "dinosaur",
-        style:
-          "width: 40px; height: 40px; vertical-align: middle; margin: 0 2px;",
+// 2. 笔记和笔记组 Schema
+const noteSchema = new Schema({
+  nodes: {
+    text: {},
+    note: {
+      content: "text*",
+      toDOM() {
+        return ["div", { class: "note" }, 0];
       },
-    ] as const,
-  // When parsing, such an image, if its type matches one of the known
-  // types, is converted to a dino node.
-  parseDOM: [
-    {
-      tag: "img[dino-type]",
-      getAttrs: (dom: HTMLElement) => {
-        const type = dom.getAttribute("dino-type");
-        return dinos.indexOf(type || "") > -1 ? { type } : false;
-      },
+      parseDOM: [{ tag: "div.note" }],
     },
-  ],
-};
+    notegroup: {
+      content: "note+",
+      toDOM() {
+        return ["div", { class: "notegroup" }, 0];
+      },
+      parseDOM: [{ tag: "div.notegroup" }],
+    },
+    doc: {
+      content: "(note | notegroup)+",
+    },
+  },
+});
 
-const ProseMirrorEditor = () => {
-  const editorRef = useRef<HTMLDivElement>(null);
-  const viewRef = useRef<EditorView | null>(null);
+// 3. 星号和标记 Schema
+const starSchema = new Schema({
+  nodes: {
+    text: {
+      group: "inline",
+    },
+    star: {
+      inline: true,
+      group: "inline",
+      toDOM() {
+        return ["span", { class: "star" }, "🟊"];
+      },
+      parseDOM: [{ tag: "span.star" }],
+    },
+    paragraph: {
+      group: "block",
+      content: "inline*",
+      toDOM() {
+        return ["p", 0];
+      },
+      parseDOM: [{ tag: "p" }],
+    },
+    boring_paragraph: {
+      group: "block",
+      content: "text*",
+      marks: "",
+      toDOM() {
+        return ["p", { class: "boring" }, 0];
+      },
+      parseDOM: [{ tag: "p.boring", priority: 60 }],
+    },
+    doc: {
+      content: "block+",
+    },
+  },
+  marks: {
+    shouting: {
+      toDOM() {
+        return ["span", { class: "shouting" }, 0];
+      },
+      parseDOM: [{ tag: "span.shouting" }],
+    },
+    link: {
+      attrs: { href: {} },
+      toDOM(node) {
+        return ["a", { href: node.attrs.href }, 0];
+      },
+      parseDOM: [
+        {
+          tag: "a",
+          getAttrs(dom: HTMLElement) {
+            return { href: dom.getAttribute("href") };
+          },
+        },
+      ],
+      inclusive: false,
+    },
+  },
+});
+
+// 自定义命令
+function makeNoteGroup(state: EditorState, dispatch?: (tr: any) => void) {
+  const range = state.selection.$from.blockRange(state.selection.$to);
+  if (!range) return false;
+  const wrapping = findWrapping(range, noteSchema.nodes.notegroup);
+  if (!wrapping) return false;
+  if (dispatch) dispatch(state.tr.wrap(range, wrapping).scrollIntoView());
+  return true;
+}
+
+function toggleLink(state: EditorState, dispatch?: (tr: any) => void) {
+  const { doc, selection } = state;
+  if (selection.empty) return false;
+  let attrs = null;
+  if (!doc.rangeHasMark(selection.from, selection.to, starSchema.marks.link)) {
+    const href = prompt("Link to where?", "");
+    if (!href) return false;
+    attrs = { href };
+  }
+  return toggleMark(starSchema.marks.link, attrs)(state, dispatch);
+}
+
+function insertStar(state: EditorState, dispatch?: (tr: any) => void) {
+  const type = starSchema.nodes.star;
+  const { $from } = state.selection;
+  if (!$from.parent.canReplaceWith($from.index(), $from.index(), type))
+    return false;
+  if (dispatch) dispatch(state.tr.replaceSelectionWith(type.create()));
+  return true;
+}
+
+const ProseMirrorPage: React.FC = () => {
+  const textEditorRef = useRef<HTMLDivElement>(null);
+  const noteEditorRef = useRef<HTMLDivElement>(null);
+  const starEditorRef = useRef<HTMLDivElement>(null);
+  const [isClient, setIsClient] = useState(false);
+  const [activeTab, setActiveTab] = useState<"text" | "notes" | "stars">(
+    "text"
+  );
 
   useEffect(() => {
-    if (!editorRef.current) return;
-
-    // 创建包含恐龙节点的 schema
-    const schema = new Schema({
-      nodes: defaultMarkdownParser.schema.spec.nodes.addBefore(
-        "image",
-        "dinosaur",
-        dinoNodeSpec
-      ),
-      marks: defaultMarkdownParser.schema.spec.marks,
-    });
-
-    // 创建包含恐龙的 HTML 内容
-    const htmlContent = `
-      <h1>标题</h1>
-      <p>这是一个包含恐龙的段落 <img dino-type="triceratops" src="/img/dino/triceratops.png" title="triceratops" class="dinosaur"> 很棒吧！</p>
-      <p>再来一个恐龙：<img dino-type="brontosaurus" src="/img/dino/brontosaurus.png" title="brontosaurus" class="dinosaur"></p>
-    `;
-
-    // 创建一个临时的 DOM 元素来解析 HTML
-    const tempDiv = document.createElement("div");
-    tempDiv.innerHTML = htmlContent;
-
-    // 使用 DOMParser 解析 HTML 内容
-    const doc = DOMParser.fromSchema(schema).parse(tempDiv);
-
-    console.log({ doc, schema });
-
-    // 创建编辑器视图
-    const view = new EditorView(editorRef.current, {
-      state: EditorState.create({
-        doc,
-        plugins: exampleSetup({ schema }),
-      }),
-    });
-
-    viewRef.current = view;
-
-    // 清理函数
-    return () => {
-      if (viewRef.current) {
-        viewRef.current.destroy();
-      }
-    };
+    setIsClient(true);
   }, []);
 
-  // 添加一个插入恐龙的辅助函数
-  const insertDino = (type: string) => {
-    if (!viewRef.current) return;
+  useEffect(() => {
+    if (!isClient) return;
 
-    const { state, dispatch } = viewRef.current;
-    const { schema } = state;
-    const dinoNode = schema.nodes.dinosaur.create({ type });
+    // 1. 文本编辑器
+    if (textEditorRef.current) {
+      const textState = EditorState.create({
+        doc: textSchema.node("doc", null, textSchema.text("Edit me!")),
+        plugins: [keymap(baseKeymap)],
+      });
 
-    const transaction = state.tr.replaceSelectionWith(dinoNode);
-    dispatch(transaction);
-  };
+      new EditorView(textEditorRef.current, {
+        state: textState,
+      });
+    }
+
+    // 2. 笔记编辑器
+    if (noteEditorRef.current) {
+      const noteKeymap = keymap({
+        "Ctrl-Space": makeNoteGroup,
+        ...baseKeymap,
+      });
+
+      const noteState = EditorState.create({
+        doc: noteSchema.node("doc", null, [
+          noteSchema.node("note", null, noteSchema.text("First note")),
+          noteSchema.node("note", null, noteSchema.text("Second note")),
+          noteSchema.node("notegroup", null, [
+            noteSchema.node("note", null, noteSchema.text("Grouped note 1")),
+            noteSchema.node("note", null, noteSchema.text("Grouped note 2")),
+          ]),
+        ]),
+        plugins: [noteKeymap],
+      });
+
+      new EditorView(noteEditorRef.current, {
+        state: noteState,
+      });
+    }
+
+    // 3. 星号编辑器
+    if (starEditorRef.current) {
+      const starKeymap = keymap({
+        "Ctrl-b": toggleMark(starSchema.marks.shouting),
+        "Ctrl-q": toggleLink,
+        "Ctrl-Space": insertStar,
+        ...baseKeymap,
+      });
+
+      const starState = EditorState.create({
+        doc: starSchema.node("doc", null, [
+          starSchema.node("paragraph", null, [
+            starSchema.text("Such as this sentence."),
+          ]),
+          starSchema.node("paragraph", null, [starSchema.text("Do laundry")]),
+          starSchema.node("paragraph", null, [
+            starSchema.text("Water the tomatoes"),
+          ]),
+          starSchema.node("paragraph", null, [
+            starSchema.text(
+              "This is a nice paragraph, it can have anything in it."
+            ),
+          ]),
+          starSchema.node("boring_paragraph", null, [
+            starSchema.text(
+              "This paragraph is boring, it can't have anything."
+            ),
+          ]),
+        ]),
+        plugins: [starKeymap],
+      });
+
+      new EditorView(starEditorRef.current, {
+        state: starState,
+      });
+    }
+  }, [isClient, activeTab]);
+
+  if (!isClient) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-gray-600">Loading ProseMirror examples...</div>
+      </div>
+    );
+  }
 
   return (
-    <div className="prose-mirror-container">
-      <div className="mb-4">
-        <h3 className="text-lg font-medium text-gray-700 mb-2">富文本编辑器</h3>
-
-        {/* 恐龙插入按钮 */}
-        <div className="flex gap-2 mb-4">
-          {dinos.map((dino) => (
-            <button
-              key={dino}
-              onClick={() => insertDino(dino)}
-              className="px-3 py-1 text-sm bg-blue-500 text-white rounded hover:bg-blue-600"
-            >
-              插入 {dino}
-            </button>
-          ))}
+    <div className="min-h-screen bg-gray-50">
+      <header className="bg-white shadow-sm border-b">
+        <div className="max-w-6xl mx-auto px-4 py-4">
+          <h1 className="text-3xl font-bold text-gray-900">
+            ProseMirror Schemas from Scratch
+          </h1>
+          <p className="text-gray-600 mt-2">
+            Examples based on the official ProseMirror documentation
+          </p>
         </div>
+      </header>
+
+      <div className="max-w-6xl mx-auto px-4 py-8">
+        {/* Tab Navigation */}
+        <div className="flex space-x-1 bg-gray-100 p-1 rounded-lg mb-8">
+          <button
+            onClick={() => setActiveTab("text")}
+            className={`px-4 py-2 rounded-md font-medium transition-colors ${
+              activeTab === "text"
+                ? "bg-white text-blue-600 shadow-sm"
+                : "text-gray-600 hover:text-gray-900"
+            }`}
+          >
+            Text Schema
+          </button>
+          <button
+            onClick={() => setActiveTab("notes")}
+            className={`px-4 py-2 rounded-md font-medium transition-colors ${
+              activeTab === "notes"
+                ? "bg-white text-blue-600 shadow-sm"
+                : "text-gray-600 hover:text-gray-900"
+            }`}
+          >
+            Notes Schema
+          </button>
+          <button
+            onClick={() => setActiveTab("stars")}
+            className={`px-4 py-2 rounded-md font-medium transition-colors ${
+              activeTab === "stars"
+                ? "bg-white text-blue-600 shadow-sm"
+                : "text-gray-600 hover:text-gray-900"
+            }`}
+          >
+            Stars & Marks Schema
+          </button>
+        </div>
+
+        {/* Text Schema Example */}
+        {activeTab === "text" && (
+          <div className="bg-white rounded-lg shadow-lg p-6">
+            <h2 className="text-xl font-semibold mb-4">Simple Text Schema</h2>
+            <p className="text-gray-600 mb-4">
+              The most simple schema possible allows the document to be composed
+              just of text.
+            </p>
+
+            <div className="border rounded-lg p-4 mb-4">
+              <div
+                ref={textEditorRef}
+                className="prose max-w-none min-h-[100px]"
+              />
+            </div>
+
+            <div className="bg-gray-50 rounded-lg p-4">
+              <h3 className="font-semibold mb-2">Schema Definition:</h3>
+              <pre className="text-sm text-gray-800 overflow-x-auto">
+                {`const textSchema = new Schema({
+  nodes: {
+    text: {},
+    doc: {content: "text*"}
+  }
+})`}
+              </pre>
+            </div>
+          </div>
+        )}
+
+        {/* Notes Schema Example */}
+        {activeTab === "notes" && (
+          <div className="bg-white rounded-lg shadow-lg p-6">
+            <h2 className="text-xl font-semibold mb-4">
+              Notes and Groups Schema
+            </h2>
+            <p className="text-gray-600 mb-4">
+              This schema consists of notes that can optionally be grouped with
+              group nodes. Press{" "}
+              <kbd className="px-2 py-1 bg-gray-200 rounded text-xs">
+                Ctrl+Space
+              </kbd>{" "}
+              to group selected notes.
+            </p>
+
+            <div className="border rounded-lg p-4 mb-4">
+              <div
+                ref={noteEditorRef}
+                className="prose max-w-none min-h-[200px]"
+              />
+            </div>
+
+            <div className="bg-gray-50 rounded-lg p-4">
+              <h3 className="font-semibold mb-2">Features:</h3>
+              <ul className="text-sm text-gray-700 space-y-1">
+                <li>• Individual notes with custom DOM representation</li>
+                <li>• Note groups that contain multiple notes</li>
+                <li>• Custom command to wrap notes in groups (Ctrl+Space)</li>
+                <li>• Enter/Backspace work to create and manage notes</li>
+              </ul>
+            </div>
+          </div>
+        )}
+
+        {/* Stars Schema Example */}
+        {activeTab === "stars" && (
+          <div className="bg-white rounded-lg shadow-lg p-6">
+            <h2 className="text-xl font-semibold mb-4">
+              Stars and Marks Schema
+            </h2>
+            <p className="text-gray-600 mb-4">
+              This schema includes inline nodes (stars) and marks (shouting and
+              links).
+            </p>
+
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
+              <h3 className="font-semibold text-blue-800 mb-2">
+                Keyboard shortcuts:
+              </h3>
+              <div className="text-sm text-blue-700 space-y-1">
+                <div>
+                  <kbd className="px-2 py-1 bg-white rounded text-xs">
+                    Ctrl/Cmd+Space
+                  </kbd>{" "}
+                  - Insert a star
+                </div>
+                <div>
+                  <kbd className="px-2 py-1 bg-white rounded text-xs">
+                    Ctrl/Cmd+B
+                  </kbd>{" "}
+                  - Toggle shouting
+                </div>
+                <div>
+                  <kbd className="px-2 py-1 bg-white rounded text-xs">
+                    Ctrl/Cmd+Q
+                  </kbd>{" "}
+                  - Add/remove link
+                </div>
+              </div>
+            </div>
+
+            <div className="border rounded-lg p-4 mb-4">
+              <div
+                ref={starEditorRef}
+                className="prose max-w-none min-h-[300px]"
+              />
+            </div>
+
+            <div className="bg-gray-50 rounded-lg p-4">
+              <h3 className="font-semibold mb-2">Schema Features:</h3>
+              <ul className="text-sm text-gray-700 space-y-1">
+                <li>
+                  • <strong>Inline nodes:</strong> Stars that can be inserted
+                  anywhere
+                </li>
+                <li>
+                  • <strong>Regular paragraphs:</strong> Allow any inline
+                  content and marks
+                </li>
+                <li>
+                  • <strong>Boring paragraphs:</strong> Only allow plain text
+                  (no marks)
+                </li>
+                <li>
+                  • <strong>Shouting mark:</strong> Makes text uppercase and
+                  bold
+                </li>
+                <li>
+                  • <strong>Link mark:</strong> Creates clickable links with
+                  href attributes
+                </li>
+              </ul>
+            </div>
+          </div>
+        )}
       </div>
 
-      <div
-        ref={editorRef}
-        className="editor-container focus:outline-none border border-gray-300 rounded p-4 min-h-[200px]"
-      />
+      {/* Custom Styles */}
+      <style jsx global>{`
+        .ProseMirror {
+          outline: none;
+          min-height: 100px;
+          padding: 12px;
+          border-radius: 6px;
+        }
 
-      <div className="mt-4 text-xs text-gray-400">
-        <p>
-          💡 提示：这个编辑器支持自定义恐龙节点，点击上方按钮插入不同类型的恐龙
-        </p>
-      </div>
+        .note {
+          background: #f0f9ff;
+          border: 1px solid #0ea5e9;
+          border-radius: 4px;
+          padding: 8px 12px;
+          margin: 4px 0;
+          display: block;
+        }
+
+        .notegroup {
+          background: #fef3c7;
+          border: 2px solid #f59e0b;
+          border-radius: 6px;
+          padding: 12px;
+          margin: 8px 0;
+        }
+
+        .notegroup .note {
+          background: white;
+          border-color: #0ea5e9;
+        }
+
+        .star {
+          color: #f59e0b;
+          font-size: 1.2em;
+          margin: 0 2px;
+        }
+
+        .shouting {
+          font-weight: bold;
+          text-transform: uppercase;
+          color: #dc2626;
+          background: #fef2f2;
+          padding: 2px 4px;
+          border-radius: 3px;
+        }
+
+        .boring {
+          color: #6b7280;
+          font-style: italic;
+          background: #f9fafb;
+          border-left: 4px solid #d1d5db;
+          padding-left: 12px;
+        }
+
+        a {
+          color: #2563eb;
+          text-decoration: underline;
+        }
+
+        a:hover {
+          text-decoration: none;
+        }
+      `}</style>
     </div>
   );
 };
 
-export default ProseMirrorEditor;
+export default ProseMirrorPage;
