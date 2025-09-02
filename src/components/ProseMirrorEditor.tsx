@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { EditorState, Plugin } from "prosemirror-state";
 import { EditorView, Decoration, DecorationSet } from "prosemirror-view";
 import { Schema, DOMParser, Node as ProseMirrorNode } from "prosemirror-model";
@@ -114,7 +114,51 @@ const ProseMirrorEditor = () => {
   const viewRef = useRef<EditorView | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
 
-  // 更新编辑器的搜索高亮
+  // 新增状态：监控文档范围内容
+  const [rangeStart, setRangeStart] = useState(10);
+  const [rangeEnd, setRangeEnd] = useState(100);
+  const [rangeContent, setRangeContent] = useState("");
+  const [docLength, setDocLength] = useState(0);
+
+  // 提取指定范围内的文本内容
+  const extractRangeContent = (
+    doc: ProseMirrorNode,
+    start: number,
+    end: number
+  ) => {
+    const docText = doc.textContent;
+    const actualStart = Math.max(0, Math.min(start, docText.length));
+    const actualEnd = Math.max(actualStart, Math.min(end, docText.length));
+    return docText.slice(actualStart, actualEnd);
+  };
+
+  // 创建文档监控插件
+  const createDocumentMonitorPlugin = useCallback(() => {
+    return new Plugin({
+      state: {
+        init(_, state) {
+          // 初始化时更新范围内容
+          const content = extractRangeContent(state.doc, rangeStart, rangeEnd);
+          setRangeContent(content);
+          setDocLength(state.doc.textContent.length);
+          return null;
+        },
+        apply(tr, oldState, _, newState) {
+          // 只有当文档内容发生变化时才更新
+          if (tr.docChanged) {
+            const content = extractRangeContent(
+              newState.doc,
+              rangeStart,
+              rangeEnd
+            );
+            setRangeContent(content);
+            setDocLength(newState.doc.textContent.length);
+          }
+          return oldState;
+        },
+      },
+    });
+  }, [rangeStart, rangeEnd]);
   const updateSearch = (term: string) => {
     if (!viewRef.current) return;
 
@@ -124,7 +168,11 @@ const ProseMirrorEditor = () => {
     const basePlugins = exampleSetup({ schema: mySchema });
     const newState = EditorState.create({
       doc: state.doc,
-      plugins: [...basePlugins, searchHighlightPlugin(term)],
+      plugins: [
+        ...basePlugins,
+        searchHighlightPlugin(term),
+        createDocumentMonitorPlugin(), // 添加文档监控插件
+      ],
       selection: state.selection,
     });
 
@@ -157,6 +205,7 @@ const ProseMirrorEditor = () => {
         plugins: [
           ...exampleSetup({ schema: mySchema }),
           searchHighlightPlugin(""),
+          createDocumentMonitorPlugin(), // 添加文档监控插件
         ],
       }),
     });
@@ -169,13 +218,44 @@ const ProseMirrorEditor = () => {
         viewRef.current.destroy();
       }
     };
-  }, []);
+  }, [createDocumentMonitorPlugin]);
 
   // 处理搜索输入变化
   const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const term = e.target.value;
     setSearchTerm(term);
     updateSearch(term);
+  };
+
+  // 更新范围监控
+  const updateRangeMonitoring = useCallback(
+    (newStart: number, newEnd: number) => {
+      if (!viewRef.current) return;
+
+      setRangeStart(newStart);
+      setRangeEnd(newEnd);
+
+      // 立即更新当前范围内容
+      const content = extractRangeContent(
+        viewRef.current.state.doc,
+        newStart,
+        newEnd
+      );
+      setRangeContent(content);
+    },
+    []
+  );
+
+  // 处理范围开始位置变化
+  const handleRangeStartChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newStart = Number(e.target.value);
+    updateRangeMonitoring(newStart, rangeEnd);
+  };
+
+  // 处理范围结束位置变化
+  const handleRangeEndChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newEnd = Number(e.target.value);
+    updateRangeMonitoring(rangeStart, newEnd);
   };
 
   return (
@@ -205,6 +285,70 @@ const ProseMirrorEditor = () => {
             </p>
           )}
         </div>
+
+        {/* 文档范围监控 */}
+        <div className="mb-4 p-4 bg-gray-50 rounded-lg">
+          <h4 className="text-sm font-medium text-gray-700 mb-3">
+            文档范围监控
+          </h4>
+
+          <div className="grid grid-cols-2 gap-4 mb-3">
+            <div>
+              <label
+                htmlFor="rangeStart"
+                className="block text-xs text-gray-600 mb-1"
+              >
+                开始位置
+              </label>
+              <input
+                id="rangeStart"
+                type="number"
+                min="0"
+                max={docLength}
+                value={rangeStart}
+                onChange={handleRangeStartChange}
+                className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+              />
+            </div>
+            <div>
+              <label
+                htmlFor="rangeEnd"
+                className="block text-xs text-gray-600 mb-1"
+              >
+                结束位置
+              </label>
+              <input
+                id="rangeEnd"
+                type="number"
+                min={rangeStart}
+                max={docLength}
+                value={rangeEnd}
+                onChange={handleRangeEndChange}
+                className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+              />
+            </div>
+          </div>
+
+          <div className="mb-2">
+            <span className="text-xs text-gray-600">
+              文档总长度: {docLength} 字符 | 监控范围: {rangeStart} - {rangeEnd}{" "}
+              ({rangeEnd - rangeStart} 字符)
+            </span>
+          </div>
+
+          <div className="p-3 bg-white border border-gray-200 rounded">
+            <div className="text-xs text-gray-500 mb-1">实时范围内容:</div>
+            <div className="text-sm font-mono text-gray-800 max-h-20 overflow-y-auto">
+              {rangeContent ? (
+                <span className="bg-yellow-100 px-1 rounded">
+                  &quot;{rangeContent}&quot;
+                </span>
+              ) : (
+                <span className="text-gray-400 italic">范围内无内容</span>
+              )}
+            </div>
+          </div>
+        </div>
       </div>
 
       <div
@@ -213,10 +357,9 @@ const ProseMirrorEditor = () => {
       />
 
       <div className="mt-4 text-xs text-gray-400">
-        <p>
-          💡
-          提示：这个编辑器支持实时搜索和高亮功能，在上方搜索框中输入文字试试看
-        </p>
+        <p>💡 提示：这个编辑器支持实时搜索和高亮功能，同时支持文档范围监控</p>
+        <p>🔍 在搜索框中输入文字查看高亮效果</p>
+        <p>📊 在范围监控区域设置字符范围，实时查看该范围内的内容变化</p>
       </div>
 
       {/* 添加搜索高亮样式 */}
