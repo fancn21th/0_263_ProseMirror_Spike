@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { EditorState, Plugin } from "prosemirror-state";
 import { EditorView, Decoration, DecorationSet } from "prosemirror-view";
-import { Schema, DOMParser } from "prosemirror-model";
+import { Schema, DOMParser, Node as ProseMirrorNode } from "prosemirror-model";
 import { schema } from "prosemirror-schema-basic";
 import { addListNodes } from "prosemirror-schema-list";
 import { exampleSetup } from "prosemirror-example-setup";
@@ -19,47 +19,35 @@ function searchHighlightPlugin(searchTerm: string) {
   return new Plugin({
     state: {
       init() {
-        return DecorationSet.empty;
+        if (!searchTerm.trim()) {
+          return DecorationSet.empty;
+        }
+        return createSearchDecorations(searchTerm, null);
       },
-      apply(tr) {
+      apply(tr, oldState) {
+        // 如果没有搜索词，返回空装饰集
         if (!searchTerm.trim()) {
           return DecorationSet.empty;
         }
 
-        const decorations: Decoration[] = [];
-        const doc = tr.doc;
-        const regex = new RegExp(
-          searchTerm.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
-          "gi"
-        );
-        const highlightedNodes = new Set<number>(); // 记录已经高亮的节点位置
-
-        // 遍历文档查找匹配的文本
-        doc.descendants((node, pos) => {
-          if (node.isText) {
-            const text = node.text || "";
-            if (regex.test(text)) {
-              // 找到包含此文本节点的父节点
-              const $pos = doc.resolve(pos);
-              const parentStart = $pos.start($pos.depth);
-              const parentEnd = $pos.end($pos.depth);
-
-              // 防止重复添加同一个节点的装饰
-              if (!highlightedNodes.has(parentStart)) {
-                highlightedNodes.add(parentStart);
-                decorations.push(
-                  Decoration.inline(parentStart, parentEnd, {
-                    class: "search-highlight-node",
-                  })
-                );
-              }
-            }
-            // 重置正则表达式的 lastIndex
-            regex.lastIndex = 0;
+        // 如果文档没有变化，保持原有的装饰集
+        // 但要检查是否是初始状态（空装饰集），如果是则需要创建装饰
+        if (!tr.docChanged) {
+          // 如果当前装饰集为空，说明是第一次搜索，需要创建装饰
+          if (oldState === DecorationSet.empty) {
+            return createSearchDecorations(searchTerm, tr.doc);
           }
-        });
+          return oldState;
+        }
 
-        return DecorationSet.create(doc, decorations);
+        // 只有当文档结构发生变化时，才重新计算装饰集
+        // 这里可以通过 map 来更新装饰位置，而不是重新计算
+        try {
+          return oldState.map(tr.mapping, tr.doc);
+        } catch {
+          // 如果 map 失败（比如装饰的内容被删除），重新创建装饰
+          return createSearchDecorations(searchTerm, tr.doc);
+        }
       },
     },
     props: {
@@ -68,6 +56,57 @@ function searchHighlightPlugin(searchTerm: string) {
       },
     },
   });
+}
+
+// 创建搜索装饰的辅助函数
+function createSearchDecorations(
+  searchTerm: string,
+  doc: ProseMirrorNode | null
+) {
+  if (!searchTerm.trim()) {
+    return DecorationSet.empty;
+  }
+
+  console.log("重新创建搜索装饰，搜索词：", searchTerm);
+
+  const decorations: Decoration[] = [];
+  const currentDoc = doc; // 使用传入的 ProseMirror doc
+  const regex = new RegExp(
+    searchTerm.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
+    "gi"
+  );
+  const highlightedNodes = new Set<number>(); // 记录已经高亮的节点位置
+
+  // 遍历文档查找匹配的文本
+  if (currentDoc && currentDoc.descendants) {
+    currentDoc.descendants((node: ProseMirrorNode, pos: number) => {
+      if (node.isText) {
+        const text = node.text || "";
+        if (regex.test(text)) {
+          // 找到包含此文本节点的父节点
+          const $pos = currentDoc.resolve(pos);
+          const parentStart = $pos.start($pos.depth);
+          const parentEnd = $pos.end($pos.depth);
+
+          // 防止重复添加同一个节点的装饰
+          if (!highlightedNodes.has(parentStart)) {
+            highlightedNodes.add(parentStart);
+            decorations.push(
+              Decoration.inline(parentStart, parentEnd, {
+                class: "search-highlight-node",
+              })
+            );
+          }
+        }
+        // 重置正则表达式的 lastIndex
+        regex.lastIndex = 0;
+      }
+    });
+
+    return DecorationSet.create(currentDoc, decorations);
+  }
+
+  return DecorationSet.empty;
 }
 
 const ProseMirrorEditor = () => {
