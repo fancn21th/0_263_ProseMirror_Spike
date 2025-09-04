@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { EditorState } from "prosemirror-state";
+import { EditorState, Transaction } from "prosemirror-state";
 import { EditorView } from "prosemirror-view";
 import { exampleSetup } from "prosemirror-example-setup";
 import { defaultMarkdownParser } from "prosemirror-markdown";
@@ -103,16 +103,41 @@ const ProseMirrorEditor = () => {
     };
   }, []);
 
-  // 添加一个插入恐龙的辅助函数
+  // 创建 ProseMirror Command 风格的插入恐龙函数
+  const createInsertDinoCommand = (type: string) => {
+    return (state: EditorState, dispatch?: (tr: Transaction) => void) => {
+      const { schema, selection } = state;
+      const { $from } = selection;
+      const index = $from.index();
+
+      // 检查是否可以在当前位置插入恐龙节点
+      if (!$from.parent.canReplaceWith(index, index, schema.nodes.dinosaur)) {
+        return false;
+      }
+
+      // 如果有 dispatch，执行插入操作
+      if (dispatch) {
+        const dinoNode = schema.nodes.dinosaur.create({ type });
+        const transaction = state.tr.replaceSelectionWith(dinoNode);
+        dispatch(transaction);
+      }
+
+      return true;
+    };
+  };
+
+  // UI 层面的插入恐龙函数
   const insertDino = (type: string) => {
     if (!viewRef.current) return;
 
     const { state, dispatch } = viewRef.current;
-    const { schema } = state;
-    const dinoNode = schema.nodes.dinosaur.create({ type });
+    const command = createInsertDinoCommand(type);
 
-    const transaction = state.tr.replaceSelectionWith(dinoNode);
-    dispatch(transaction);
+    // 执行命令并检查结果
+    const success = command(state, dispatch);
+    if (!success) {
+      console.warn(`无法在当前位置插入 ${type} 恐龙`);
+    }
   };
 
   return (
