@@ -1,11 +1,16 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { EditorState, Transaction } from "prosemirror-state";
 import { EditorView } from "prosemirror-view";
 import { exampleSetup } from "prosemirror-example-setup";
 import { defaultMarkdownParser } from "prosemirror-markdown";
 import { Schema, DOMParser, Node } from "prosemirror-model";
+
+// 流式内容类型定义
+type StreamItem =
+  | { type: "text"; content: string }
+  | { type: "dino"; dinoType: string };
 
 // The supported types of dinosaurs.
 const dinos = [
@@ -55,6 +60,24 @@ const dinoNodeSpec = {
 const ProseMirrorEditor = () => {
   const editorRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
+
+  // 模拟流式输入的内容（文本 + 恐龙节点）
+  const streamContent: StreamItem[] = [
+    { type: "text", content: "这是一段流式输入的模拟文本，包含了文字和恐龙 " },
+    { type: "dino", dinoType: "triceratops" },
+    { type: "text", content: " 很棒吧！继续添加更多内容，比如另一只恐龙 " },
+    { type: "dino", dinoType: "brontosaurus" },
+    { type: "text", content: " 和最后一只 " },
+    { type: "dino", dinoType: "tyrannosaurus" },
+    {
+      type: "text",
+      content: "。这种混合内容的流式输入展示了ProseMirror的强大功能！",
+    },
+  ];
+
+  // 流式输入状态
+  const streamingRef = useRef<boolean>(false);
+  const [isStreaming, setIsStreaming] = useState<boolean>(false);
 
   useEffect(() => {
     if (!editorRef.current) return;
@@ -140,6 +163,66 @@ const ProseMirrorEditor = () => {
     }
   };
 
+  // 流式输入模拟函数
+  const simulateStreamingInput = async () => {
+    if (!viewRef.current || streamingRef.current) return;
+
+    streamingRef.current = true;
+    setIsStreaming(true);
+    const view = viewRef.current;
+
+    // 获取当前光标位置
+    let insertPos = view.state.selection.from;
+
+    // 遍历流式内容
+    for (const item of streamContent) {
+      if (!streamingRef.current) break; // 允许中断流式输入
+
+      if (item.type === "text") {
+        // 逐字符插入文本
+        for (let i = 0; i < item.content.length; i++) {
+          if (!streamingRef.current) break;
+
+          const char = item.content[i];
+          const { state } = view;
+
+          // 创建事务在指定位置插入字符
+          const tr = state.tr.insertText(char, insertPos);
+          view.dispatch(tr);
+          insertPos++; // 更新插入位置
+
+          // 模拟打字延迟（30-100ms之间的随机延迟）
+          const delay = Math.random() * 70 + 30;
+          await new Promise((resolve) => setTimeout(resolve, delay));
+        }
+      } else if (item.type === "dino") {
+        // 插入恐龙节点
+        const { state } = view;
+        const { schema } = state;
+
+        // 创建恐龙节点
+        const dinoNode = schema.nodes.dinosaur.create({ type: item.dinoType });
+
+        // 在指定位置插入恐龙节点
+        const tr = state.tr.insert(insertPos, dinoNode);
+        view.dispatch(tr);
+        insertPos++; // 恐龙节点占用一个位置
+
+        // 恐龙插入后稍微长一点的延迟
+        await new Promise((resolve) => setTimeout(resolve, 200));
+      }
+    }
+
+    streamingRef.current = false;
+    setIsStreaming(false);
+  };
+
+  // 停止流式输入
+  const stopStreaming = () => {
+    streamingRef.current = false;
+    setIsStreaming(false);
+  };
+
   return (
     <div className="prose-mirror-container">
       <div className="mb-4">
@@ -157,6 +240,24 @@ const ProseMirrorEditor = () => {
             </button>
           ))}
         </div>
+
+        {/* 流式输入控制按钮 */}
+        <div className="flex gap-2 mb-4">
+          <button
+            onClick={simulateStreamingInput}
+            disabled={isStreaming}
+            className="px-4 py-2 text-sm bg-green-500 text-white rounded hover:bg-green-600 disabled:bg-gray-400 disabled:cursor-not-allowed"
+          >
+            {isStreaming ? "正在流式输入..." : "开始流式输入"}
+          </button>
+          <button
+            onClick={stopStreaming}
+            disabled={!isStreaming}
+            className="px-4 py-2 text-sm bg-red-500 text-white rounded hover:bg-red-600 disabled:bg-gray-400 disabled:cursor-not-allowed"
+          >
+            停止输入
+          </button>
+        </div>
       </div>
 
       <div
@@ -167,6 +268,10 @@ const ProseMirrorEditor = () => {
       <div className="mt-4 text-xs text-gray-400">
         <p>
           💡 提示：这个编辑器支持自定义恐龙节点，点击上方按钮插入不同类型的恐龙
+        </p>
+        <p>
+          🚀
+          流式输入：点击&ldquo;开始流式输入&rdquo;按钮可以模拟AI逐字符生成文本的效果，内容包含文字和恐龙节点的混合流式插入
         </p>
       </div>
     </div>
