@@ -57,6 +57,32 @@ const dinoNodeSpec = {
   ],
 };
 
+// 将 chunk 拆分成单个字符的函数 - 模拟真实的流式数据处理
+const expandChunksToCharacters = (chunks: StreamChunk[]): StreamChunk[] => {
+  const expandedChunks: StreamChunk[] = [];
+
+  for (const chunk of chunks) {
+    if (chunk.type === "text") {
+      // 将文本 chunk 拆分成单个字符的 chunk
+      for (const char of chunk.content) {
+        expandedChunks.push({ type: "text", content: char });
+      }
+    } else {
+      // 非文本 chunk（如恐龙节点）保持不变
+      expandedChunks.push(chunk);
+    }
+  }
+
+  return expandedChunks;
+};
+
+// 创建包含恐龙的 HTML 内容
+const htmlContent = `
+      <h1>标题</h1>
+      <p>这是一个包含恐龙的段落 <img dino-type="triceratops" src="/img/dino/triceratops.png" title="triceratops" class="dinosaur"> 很棒吧！</p>
+      <p>再来一个恐龙：<img dino-type="brontosaurus" src="/img/dino/brontosaurus.png" title="brontosaurus" class="dinosaur"></p>
+    `;
+
 const ProseMirrorEditor = () => {
   const editorRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
@@ -79,25 +105,6 @@ const ProseMirrorEditor = () => {
   const streamingRef = useRef<boolean>(false);
   const [isStreaming, setIsStreaming] = useState<boolean>(false);
 
-  // 将 chunk 拆分成单个字符的函数 - 模拟真实的流式数据处理
-  const expandChunksToCharacters = (chunks: StreamChunk[]): StreamChunk[] => {
-    const expandedChunks: StreamChunk[] = [];
-
-    for (const chunk of chunks) {
-      if (chunk.type === "text") {
-        // 将文本 chunk 拆分成单个字符的 chunk
-        for (const char of chunk.content) {
-          expandedChunks.push({ type: "text", content: char });
-        }
-      } else {
-        // 非文本 chunk（如恐龙节点）保持不变
-        expandedChunks.push(chunk);
-      }
-    }
-
-    return expandedChunks;
-  };
-
   useEffect(() => {
     if (!editorRef.current) return;
 
@@ -110,13 +117,6 @@ const ProseMirrorEditor = () => {
       ),
       marks: defaultMarkdownParser.schema.spec.marks,
     });
-
-    // 创建包含恐龙的 HTML 内容
-    const htmlContent = `
-      <h1>标题</h1>
-      <p>这是一个包含恐龙的段落 <img dino-type="triceratops" src="/img/dino/triceratops.png" title="triceratops" class="dinosaur"> 很棒吧！</p>
-      <p>再来一个恐龙：<img dino-type="brontosaurus" src="/img/dino/brontosaurus.png" title="brontosaurus" class="dinosaur"></p>
-    `;
 
     // 创建一个临时的 DOM 元素来解析 HTML
     const tempDiv = document.createElement("div");
