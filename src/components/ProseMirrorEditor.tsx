@@ -28,6 +28,11 @@ const ProseMirrorEditor = () => {
         doc,
         plugins: exampleSetup({ schema }),
       }),
+      dispatchTransaction(transaction) {
+        // 你必须要手动更新状态 否则 用户的输入不会生效
+        const newState = view.state.apply(transaction);
+        view.updateState(newState);
+      },
     });
 
     viewRef.current = view;
