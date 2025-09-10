@@ -49,6 +49,12 @@ const nextConfig: NextConfig = {
       ),
     };
 
+    // 添加一个规则来处理 .json 文件
+    config.module.rules.push({
+      test: /\.txt$/,
+      use: "raw-loader", // 使用 raw-loader 来处理 .json 文件
+    });
+
     // 开发模式下启用源映射和文件监听
     if (dev) {
       config.devtool = "eval-source-map";
