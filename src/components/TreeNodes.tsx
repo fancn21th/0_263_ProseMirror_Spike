@@ -3,10 +3,11 @@
 import { Graph } from "@/components/Graph";
 import { treeToGraphData } from "@antv/g6";
 import type { GraphOptions } from "@antv/g6";
-import data from "./data.txt";
+import { TreeNodeData } from "./ProseMirrorEditor";
 
-const text = data as string;
-const jsonData = JSON.parse(text);
+interface TreeNodesProps {
+  data?: TreeNodeData;
+}
 
 /**
  * If the node is a leaf node
@@ -18,10 +19,18 @@ function isLeafNode(d: any): boolean {
   return !d.children || d.children.length === 0;
 }
 
-export default function TreeNodes() {
+export default function TreeNodes({ data }: TreeNodesProps) {
+  // 如果没有传入数据，显示空状态
+  if (!data) {
+    return (
+      <div className="flex items-center justify-center h-64 text-gray-400">
+        暂无节点数据
+      </div>
+    );
+  }
   const graphOptions: GraphOptions = {
     autoFit: "view",
-    data: treeToGraphData(jsonData),
+    data: treeToGraphData(data),
     behaviors: [
       "drag-canvas",
       "zoom-canvas",

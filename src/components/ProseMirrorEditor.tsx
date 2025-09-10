@@ -1,22 +1,37 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { EditorState } from "prosemirror-state";
 import { EditorView } from "prosemirror-view";
 import { Node as ProseMirrorNode, Mark } from "prosemirror-model";
 import { exampleSetup } from "prosemirror-example-setup";
 import { defaultMarkdownParser } from "prosemirror-markdown";
 import TreeNodes from "./TreeNodes";
-import content from "./md.txt";
+
+// 定义树节点的数据结构
+export interface TreeNodeData {
+  id: string;
+  nodeType: string;
+  text?: string;
+  attrs?: Record<string, unknown>;
+  marks?: string[];
+  position?: number;
+  nodeSize?: number;
+  children?: TreeNodeData[];
+}
 
 const ProseMirrorEditor = () => {
   const editorRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
+  const [treeData, setTreeData] = useState<TreeNodeData | null>(null);
 
   // 递归打印节点信息
-  const printNodes = (node: ProseMirrorNode, depth = 0) => {
+  const printNodes = (node: ProseMirrorNode, depth = 0, pos = 0) => {
     const indent = "  ".repeat(depth);
     console.log(`${indent}节点类型: ${node.type.name}`);
+    console.log(
+      `${indent}位置: pos-${pos}, 节点大小: nodeSize-${node.nodeSize}`
+    );
 
     if (node.attrs && Object.keys(node.attrs).length > 0) {
       console.log(`${indent}属性:`, node.attrs);
@@ -34,10 +49,12 @@ const ProseMirrorEditor = () => {
     }
 
     if (node.content) {
-      console.log(`${indent}子节点数量: ${node.content.size}`);
+      console.log(`${indent}子节点数量: count-${node.content.size}`);
+      let childPos = pos + 1; // 子节点开始位置
       node.content.forEach((child: ProseMirrorNode, index: number) => {
-        console.log(`${indent}子节点 ${index}:`);
-        printNodes(child, depth + 1);
+        console.log(`${indent}子节点 index-${index}:`);
+        printNodes(child, depth + 1, childPos);
+        childPos += child.nodeSize;
       });
     }
   };
@@ -47,7 +64,7 @@ const ProseMirrorEditor = () => {
     if (viewRef.current) {
       console.log("==================== 当前文档节点结构 ====================");
       const doc = viewRef.current.state.doc;
-      printNodes(doc);
+      printNodes(doc, 0, 0); // 从位置0开始
       console.log("==================== 节点结构结束 ====================");
     }
   };
@@ -55,8 +72,98 @@ const ProseMirrorEditor = () => {
   useEffect(() => {
     if (!editorRef.current) return;
 
+    /**
+
+    位置:  0  1  2  3  4  5  6  7  8  ...
+    内容: [doc[heading[标题]paragraph[这是...]]...]
+          ^   ^      ^   ^
+          |   |      |   heading结束(pos 4)
+          |   |      文本"标题"(pos 2-3)
+          |   heading开始(pos 1)
+          doc开始(pos 0)
+
+     */
+
+    // 将 ProseMirror 节点转换为树形数据结构
+    const convertNodeToTreeData = (
+      node: ProseMirrorNode,
+      path = "0",
+      pos = 0
+    ): TreeNodeData => {
+      const nodeData: TreeNodeData = {
+        id: `${path}-${node.type.name}`,
+        nodeType: node.type.name,
+        position: pos,
+        nodeSize: node.nodeSize,
+      };
+
+      // 更新节点ID，包含位置和大小信息
+      nodeData.id = `path-${path}-${node.type.name}-pos-${pos}-size-${node.nodeSize}`;
+
+      // 添加文本内容
+      if (node.isText && "text" in node && node.text) {
+        nodeData.text = node.text;
+        nodeData.id = `path-${path}-text("${node.text.substring(
+          0,
+          10
+        )}...")-pos-${pos}-size-${node.nodeSize}`;
+      }
+
+      // 添加属性
+      if (node.attrs && Object.keys(node.attrs).length > 0) {
+        nodeData.attrs = node.attrs;
+      }
+
+      // 添加标记
+      if (node.marks && node.marks.length > 0) {
+        nodeData.marks = node.marks.map((mark: Mark) => mark.type.name);
+      }
+
+      // 添加子节点
+      if (node.content && node.content.size > 0) {
+        nodeData.children = [];
+        let childPos = pos + 1; // 子节点开始位置（跳过开始标记）
+
+        node.content.forEach((child: ProseMirrorNode, index: number) => {
+          nodeData.children!.push(
+            convertNodeToTreeData(child, `${path}-child-${index}`, childPos)
+          );
+          childPos += child.nodeSize; // 移动到下一个子节点的位置
+        });
+      }
+
+      return nodeData;
+    };
+
+    // 更新树形数据的函数
+    const updateTreeData = () => {
+      if (viewRef.current) {
+        const doc = viewRef.current.state.doc;
+        // 文档的根节点位置从0开始
+        const newTreeData = convertNodeToTreeData(doc, "root", 0);
+        setTreeData(newTreeData);
+      }
+    };
+
+    // 创建初始 Markdown 文档内容
+    const initialContent = `# 标题
+
+这是一个示例文档，包含：
+
+- 列表项 1
+- 列表项 2
+
+**粗体文本** 和 *斜体文本*
+
+> 这是一个引用块
+
+\`\`\`javascript
+console.log("代码块");
+\`\`\`
+`;
+
     // 使用 defaultMarkdownParser 解析 Markdown
-    const doc = defaultMarkdownParser.parse(content);
+    const doc = defaultMarkdownParser.parse(initialContent);
     const schema = defaultMarkdownParser.schema;
 
     console.log({ doc, schema });
@@ -71,10 +178,15 @@ const ProseMirrorEditor = () => {
         // 你必须要手动更新状态 否则 用户的输入不会生效
         const newState = view.state.apply(transaction);
         view.updateState(newState);
+        // 每次编辑器状态更新时，更新树形数据
+        updateTreeData();
       },
     });
 
     viewRef.current = view;
+
+    // 初始化树形数据
+    updateTreeData();
 
     // 清理函数
     return () => {
@@ -108,7 +220,12 @@ const ProseMirrorEditor = () => {
       </div>
       {/* 图形渲染在右侧 */}
       <div className="flex-1">
-        <TreeNodes />
+        <h3 className="text-lg font-medium text-gray-700 mb-4">节点结构树</h3>
+        {treeData ? (
+          <TreeNodes data={treeData} />
+        ) : (
+          <div className="text-gray-400">加载中...</div>
+        )}
       </div>
     </div>
   );
