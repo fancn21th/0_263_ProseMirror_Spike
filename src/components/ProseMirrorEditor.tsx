@@ -1,29 +1,98 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { EditorState } from "prosemirror-state";
 import { EditorView } from "prosemirror-view";
 import { Node as ProseMirrorNode, Mark } from "prosemirror-model";
 import { exampleSetup } from "prosemirror-example-setup";
 import { defaultMarkdownParser } from "prosemirror-markdown";
 import TreeNodes from "./TreeNodes";
-
-// 定义树节点的数据结构
-export interface TreeNodeData {
-  id: string;
-  nodeType: string;
-  text?: string;
-  attrs?: Record<string, unknown>;
-  marks?: string[];
-  position?: number;
-  nodeSize?: number;
-  children?: TreeNodeData[];
-}
+import { TreeNodeData } from "@/types/prosemirror";
+import ErrorBoundary from "./ErrorBoundary";
+import {
+  useDebounce,
+  createDocumentHash,
+  PerformanceMonitor,
+} from "@/utils/performance";
 
 const ProseMirrorEditor = () => {
   const editorRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
   const [treeData, setTreeData] = useState<TreeNodeData | null>(null);
+  const lastDocHashRef = useRef<string>("");
+  const performanceMonitor = useRef(PerformanceMonitor.getInstance());
+
+  // 将 ProseMirror 节点转换为树形数据结构（优化版本）
+  const convertNodeToTreeData = useCallback(
+    (node: ProseMirrorNode, path = "0", pos = 0): TreeNodeData => {
+      const nodeData: TreeNodeData = {
+        id: `${path}-${node.type.name}`,
+        nodeType: node.type.name,
+        position: pos,
+        nodeSize: node.nodeSize,
+      };
+
+      // 添加文本内容
+      if (node.isText && "text" in node && node.text) {
+        nodeData.text = node.text;
+      }
+
+      // 添加属性
+      if (node.attrs && Object.keys(node.attrs).length > 0) {
+        nodeData.attrs = node.attrs;
+      }
+
+      // 添加标记
+      if (node.marks && node.marks.length > 0) {
+        nodeData.marks = node.marks.map((mark: Mark) => mark.type.name);
+      }
+
+      // 添加子节点
+      if (node.content && node.content.size > 0) {
+        nodeData.children = [];
+        let childPos = pos + 1; // 子节点开始位置（跳过开始标记）
+
+        node.content.forEach((child: ProseMirrorNode, index: number) => {
+          nodeData.children!.push(
+            convertNodeToTreeData(child, `${path}-child-${index}`, childPos)
+          );
+          childPos += child.nodeSize; // 移动到下一个子节点的位置
+        });
+      }
+
+      return nodeData;
+    },
+    []
+  );
+
+  // 更新树形数据的函数（带性能优化）
+  const updateTreeData = useCallback(() => {
+    if (!viewRef.current) return;
+
+    const doc = viewRef.current.state.doc;
+    const currentHash = createDocumentHash(doc);
+
+    // 如果文档没有变化，跳过更新
+    if (currentHash === lastDocHashRef.current) {
+      return;
+    }
+
+    performanceMonitor.current.startMeasure("convertNodeToTreeData");
+
+    try {
+      // 文档的根节点位置从0开始
+      const newTreeData = convertNodeToTreeData(doc, "root", 0);
+      setTreeData(newTreeData);
+      lastDocHashRef.current = currentHash;
+    } catch (error) {
+      console.error("Error converting node to tree data:", error);
+    } finally {
+      performanceMonitor.current.endMeasure("convertNodeToTreeData");
+    }
+  }, [convertNodeToTreeData]);
+
+  // 防抖版本的更新函数
+  const debouncedUpdateTreeData = useDebounce(updateTreeData, 300);
 
   // 递归打印节点信息
   const printNodes = (node: ProseMirrorNode, depth = 0, pos = 0) => {
@@ -72,72 +141,6 @@ const ProseMirrorEditor = () => {
   useEffect(() => {
     if (!editorRef.current) return;
 
-    /**
-
-    位置:  0  1  2  3  4  5  6  7  8  ...
-    内容: [doc[heading[标题]paragraph[这是...]]...]
-          ^   ^      ^   ^
-          |   |      |   heading结束(pos 4)
-          |   |      文本"标题"(pos 2-3)
-          |   heading开始(pos 1)
-          doc开始(pos 0)
-
-     */
-
-    // 将 ProseMirror 节点转换为树形数据结构
-    const convertNodeToTreeData = (
-      node: ProseMirrorNode,
-      path = "0",
-      pos = 0
-    ): TreeNodeData => {
-      const nodeData: TreeNodeData = {
-        id: `${path}-${node.type.name}`,
-        nodeType: node.type.name,
-        position: pos,
-        nodeSize: node.nodeSize,
-      };
-
-      // 添加文本内容
-      if (node.isText && "text" in node && node.text) {
-        nodeData.text = node.text;
-      }
-
-      // 添加属性
-      if (node.attrs && Object.keys(node.attrs).length > 0) {
-        nodeData.attrs = node.attrs;
-      }
-
-      // 添加标记
-      if (node.marks && node.marks.length > 0) {
-        nodeData.marks = node.marks.map((mark: Mark) => mark.type.name);
-      }
-
-      // 添加子节点
-      if (node.content && node.content.size > 0) {
-        nodeData.children = [];
-        let childPos = pos + 1; // 子节点开始位置（跳过开始标记）
-
-        node.content.forEach((child: ProseMirrorNode, index: number) => {
-          nodeData.children!.push(
-            convertNodeToTreeData(child, `${path}-child-${index}`, childPos)
-          );
-          childPos += child.nodeSize; // 移动到下一个子节点的位置
-        });
-      }
-
-      return nodeData;
-    };
-
-    // 更新树形数据的函数
-    const updateTreeData = () => {
-      if (viewRef.current) {
-        const doc = viewRef.current.state.doc;
-        // 文档的根节点位置从0开始
-        const newTreeData = convertNodeToTreeData(doc, "root", 0);
-        setTreeData(newTreeData);
-      }
-    };
-
     // 创建初始 Markdown 文档内容
     const initialContent = `# 标题
 
@@ -171,8 +174,8 @@ console.log("代码块");
         // 你必须要手动更新状态 否则 用户的输入不会生效
         const newState = view.state.apply(transaction);
         view.updateState(newState);
-        // 每次编辑器状态更新时，更新树形数据
-        updateTreeData();
+        // 每次编辑器状态更新时，使用防抖更新树形数据
+        debouncedUpdateTreeData();
       },
     });
 
@@ -187,29 +190,33 @@ console.log("代码块");
         viewRef.current.destroy();
       }
     };
-  }, []);
+  }, [debouncedUpdateTreeData, updateTreeData]);
 
   return (
     <div className="flex p-4 border rounded shadow-sm bg-white gap-4">
       {/* 编辑器在左侧 */}
       <div className="flex-1">
-        <div className="mb-4 flex items-center justify-between">
-          <h3 className="text-lg font-medium text-gray-700">富文本编辑器</h3>
-          <button
-            onClick={printCurrentNodes}
-            className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors"
-          >
-            打印节点结构
-          </button>
-        </div>
-        <div
-          ref={editorRef}
-          className="editor-container focus:outline-none h-[400px]"
-        />
-        <div className="mt-4 text-xs text-gray-400">
-          <p>💡 提示：这个编辑器支持 Markdown 风格的快捷键和丰富的格式化选项</p>
-          <p>🔍 点击上方按钮可以在控制台查看当前文档的节点结构</p>
-        </div>
+        <ErrorBoundary>
+          <div className="mb-4 flex items-center justify-between">
+            <h3 className="text-lg font-medium text-gray-700">富文本编辑器</h3>
+            <button
+              onClick={printCurrentNodes}
+              className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors"
+            >
+              打印节点结构
+            </button>
+          </div>
+          <div
+            ref={editorRef}
+            className="editor-container focus:outline-none h-[400px]"
+          />
+          <div className="mt-4 text-xs text-gray-400">
+            <p>
+              💡 提示：这个编辑器支持 Markdown 风格的快捷键和丰富的格式化选项
+            </p>
+            <p>🔍 点击上方按钮可以在控制台查看当前文档的节点结构</p>
+          </div>
+        </ErrorBoundary>
       </div>
       {/* 图形渲染在右侧 */}
       <div className="flex-1">

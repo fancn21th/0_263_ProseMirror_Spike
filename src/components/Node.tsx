@@ -6,16 +6,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-
-// 导入 TreeNodeData 类型
-export interface TreeNodeData {
-  nodeType: string;
-  text?: string;
-  marks?: string[];
-  position?: number;
-  nodeSize?: number;
-  children?: TreeNodeData[];
-}
+import { TreeNodeData } from "@/types/prosemirror";
 
 interface NodeProps {
   data: TreeNodeData;

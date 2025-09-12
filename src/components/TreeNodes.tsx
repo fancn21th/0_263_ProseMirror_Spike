@@ -4,8 +4,10 @@ import { Graph } from "@/components/Graph";
 import { ExtensionCategory, register, treeToGraphData } from "@antv/g6";
 import type { GraphOptions } from "@antv/g6";
 import { ReactNode } from "@antv/g6-extension-react";
-import { TreeNodeData } from "./ProseMirrorEditor";
+import { TreeNodeData } from "@/types/prosemirror";
 import Node from "./Node";
+import ErrorBoundary from "./ErrorBoundary";
+import GraphErrorFallback from "./GraphErrorFallback";
 
 interface TreeNodesProps {
   data?: TreeNodeData;
@@ -21,6 +23,44 @@ register(ExtensionCategory.NODE, "react", ReactNode);
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function isLeafNode(d: any): boolean {
   return !d.children || d.children.length === 0;
+}
+
+/**
+ * Type guard to safely convert G6 NodeData to TreeNodeData
+ * @param data - G6 node data
+ * @returns whether the data is compatible with TreeNodeData
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function isValidTreeNodeData(data: any): data is TreeNodeData {
+  return (
+    typeof data === "object" &&
+    data !== null &&
+    typeof data.nodeType === "string"
+  );
+}
+
+/**
+ * Safely converts G6 NodeData to TreeNodeData
+ * @param data - G6 node data
+ * @returns TreeNodeData or a fallback object
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function safeConvertToTreeNodeData(data: any): TreeNodeData {
+  if (isValidTreeNodeData(data)) {
+    return data;
+  }
+
+  // Fallback for invalid data
+  return {
+    id: data?.id || "unknown",
+    nodeType: data?.nodeType || data?.type || "unknown",
+    text: data?.text,
+    attrs: data?.attrs,
+    marks: data?.marks,
+    position: data?.position,
+    nodeSize: data?.nodeSize,
+    children: data?.children,
+  };
 }
 
 export default function TreeNodes({ data }: TreeNodesProps) {
@@ -63,7 +103,7 @@ export default function TreeNodes({ data }: TreeNodesProps) {
         }
         return {
           ...style,
-          component: <Node data={d as unknown as TreeNodeData} />,
+          component: <Node data={safeConvertToTreeNodeData(d)} />,
         };
       },
       animation: {
@@ -84,5 +124,15 @@ export default function TreeNodes({ data }: TreeNodesProps) {
     },
   };
 
-  return <Graph options={graphOptions} />;
+  return (
+    <ErrorBoundary
+      fallback={GraphErrorFallback}
+      onError={(error, errorInfo) => {
+        console.error("Graph rendering error:", error, errorInfo);
+        // Could send to error reporting service
+      }}
+    >
+      <Graph options={graphOptions} />
+    </ErrorBoundary>
+  );
 }
