@@ -9,10 +9,8 @@ import { Badge } from "@/components/ui/badge";
 
 // 导入 TreeNodeData 类型
 export interface TreeNodeData {
-  id: string;
   nodeType: string;
   text?: string;
-  attrs?: Record<string, unknown>;
   marks?: string[];
   position?: number;
   nodeSize?: number;
@@ -34,7 +32,8 @@ const Node = ({ data }: NodeProps) => {
         </CardTitle>
         {text && (
           <CardDescription className="text-[10px] text-gray-500 truncate leading-tight mt-0">
-            &quot;{text.substring(0, 20)}...&quot;
+            &quot;{text.length > 20 ? text.substring(0, 20) + "..." : text}
+            &quot;
           </CardDescription>
         )}
       </CardHeader>
