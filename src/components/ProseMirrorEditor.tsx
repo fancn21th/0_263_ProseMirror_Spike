@@ -97,16 +97,9 @@ const ProseMirrorEditor = () => {
         nodeSize: node.nodeSize,
       };
 
-      // 更新节点ID，包含位置和大小信息
-      nodeData.id = `path-${path}-${node.type.name}-pos-${pos}-size-${node.nodeSize}`;
-
       // 添加文本内容
       if (node.isText && "text" in node && node.text) {
         nodeData.text = node.text;
-        nodeData.id = `path-${path}-text("${node.text.substring(
-          0,
-          10
-        )}...")-pos-${pos}-size-${node.nodeSize}`;
       }
 
       // 添加属性

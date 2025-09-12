@@ -1,13 +1,17 @@
 "use client";
 
 import { Graph } from "@/components/Graph";
-import { treeToGraphData } from "@antv/g6";
+import { ExtensionCategory, register, treeToGraphData } from "@antv/g6";
 import type { GraphOptions } from "@antv/g6";
+import { ReactNode } from "@antv/g6-extension-react";
 import { TreeNodeData } from "./ProseMirrorEditor";
+import Node from "./Node";
 
 interface TreeNodesProps {
   data?: TreeNodeData;
 }
+
+register(ExtensionCategory.NODE, "react", ReactNode);
 
 /**
  * If the node is a leaf node
@@ -38,6 +42,7 @@ export default function TreeNodes({ data }: TreeNodesProps) {
       "collapse-expand",
     ],
     node: {
+      type: "react",
       style: (d) => {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const style: any = {
@@ -56,7 +61,10 @@ export default function TreeNodes({ data }: TreeNodesProps) {
             labelTextAlign: "left",
           });
         }
-        return style;
+        return {
+          ...style,
+          component: <Node data={d as unknown as TreeNodeData} />,
+        };
       },
       animation: {
         enter: false,
@@ -71,8 +79,8 @@ export default function TreeNodes({ data }: TreeNodesProps) {
     layout: {
       type: "dendrogram",
       direction: "TB", // H / V / LR / RL / TB / BT
-      nodeSep: 50,
-      rankSep: 120,
+      nodeSep: 80, // 增加水平间距，适应卡片宽度
+      rankSep: 130, // 增加垂直间距，适应卡片高度
     },
   };
 
