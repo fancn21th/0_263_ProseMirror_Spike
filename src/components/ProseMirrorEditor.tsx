@@ -14,6 +14,7 @@ import {
   createDocumentHash,
   PerformanceMonitor,
 } from "@/utils/performance";
+import md from "./md.txt";
 
 const ProseMirrorEditor = () => {
   const editorRef = useRef<HTMLDivElement>(null);
@@ -142,24 +143,9 @@ const ProseMirrorEditor = () => {
     if (!editorRef.current) return;
 
     // 创建初始 Markdown 文档内容
-    const initialContent = `# 标题
-
-这是一个示例文档，包含：
-
-- 列表项 1
-- 列表项 2
-
-**粗体文本** 和 *斜体文本*
-
-> 这是一个引用块
-
-\`\`\`javascript
-console.log("代码块");
-\`\`\`
-`;
 
     // 使用 defaultMarkdownParser 解析 Markdown
-    const doc = defaultMarkdownParser.parse(initialContent);
+    const doc = defaultMarkdownParser.parse(md);
     const schema = defaultMarkdownParser.schema;
 
     console.log({ doc, schema });
