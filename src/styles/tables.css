@@ -61,14 +61,149 @@
   margin: 1em 0;
 }
 
+/* 自定义表格 NodeView 样式 */
+.table-wrapper {
+  position: relative;
+  margin: 1em 0;
+  border-radius: 8px;
+  overflow: hidden;
+  transition: box-shadow 0.2s ease;
+}
+
+.table-wrapper:hover {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.table-wrapper.selected {
+  box-shadow: 0 0 0 2px #007acc;
+  background-color: rgba(0, 122, 204, 0.05);
+}
+
+.table-toolbar {
+  display: none;
+  position: absolute;
+  top: -40px;
+  left: 0;
+  right: 0;
+  background: white;
+  border: 1px solid #ddd;
+  border-radius: 4px 4px 0 0;
+  padding: 8px;
+  gap: 4px;
+  z-index: 10;
+  box-shadow: 0 -2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.table-btn {
+  padding: 4px 8px;
+  font-size: 12px;
+  border: 1px solid #ccc;
+  background: white;
+  border-radius: 3px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background-color 0.2s;
+}
+
+.table-btn:hover {
+  background-color: #f5f5f5;
+}
+
+.table-btn:active {
+  background-color: #e0e0e0;
+}
+
+.table-container {
+  overflow-x: auto;
+  background: white;
+}
+
+.custom-table {
+  border-collapse: collapse;
+  table-layout: fixed;
+  width: 100%;
+  background: white;
+}
+
+.custom-table td,
+.custom-table th {
+  min-width: 1em;
+  border: 1px solid #ddd;
+  padding: 8px 12px;
+  vertical-align: top;
+  box-sizing: border-box;
+  position: relative;
+}
+
+.custom-table th {
+  font-weight: 600;
+  text-align: left;
+  background-color: #f8f9fa;
+  border-bottom: 2px solid #ddd;
+}
+
+.custom-table td:hover,
+.custom-table th:hover {
+  background-color: rgba(0, 122, 204, 0.05);
+}
+
+/* 列宽调整柄样式 */
+.column-resize-handle {
+  position: absolute;
+  right: -2px;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  background-color: #007acc;
+  cursor: col-resize;
+  display: none;
+  z-index: 5;
+}
+
+.column-resize-handle:hover {
+  background-color: #005999;
+}
+
+/* 表格选中状态 */
+.custom-table .selected-cell {
+  background-color: rgba(0, 122, 204, 0.1);
+  position: relative;
+}
+
+.custom-table .selected-cell::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  border: 2px solid #007acc;
+  pointer-events: none;
+}
+
+/* 确保表格在段落中正确显示 */
+.custom-table p {
+  margin: 0;
+}
+
 /* 确保表格响应式 */
 @media (max-width: 768px) {
-  .ProseMirror table {
+  .table-toolbar {
+    flex-wrap: wrap;
+    top: -60px;
+  }
+
+  .table-btn {
+    padding: 2px 4px;
+    font-size: 10px;
+  }
+
+  .custom-table {
     font-size: 14px;
   }
 
-  .ProseMirror td,
-  .ProseMirror th {
-    padding: 6px;
+  .custom-table td,
+  .custom-table th {
+    padding: 6px 8px;
   }
 }

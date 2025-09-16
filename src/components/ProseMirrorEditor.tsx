@@ -7,6 +7,7 @@ import { exampleSetup } from "prosemirror-example-setup";
 import { schema } from "../config/schema";
 import { DOMParser } from "prosemirror-model";
 import MarkdownIt from "markdown-it";
+import { TableNodeView } from "./TableNodeView";
 import "../styles/tables.css";
 
 const md = new MarkdownIt({ html: true });
@@ -41,6 +42,8 @@ const ProseMirrorEditor = () => {
     const doc = DOMParser.fromSchema(schema).parse(tempDiv);
 
     console.log({ doc, schema });
+    console.log("Document structure:", doc.toString());
+    console.log("Document content:", doc.content.toString());
 
     // 创建编辑器视图
     const view = new EditorView(editorRef.current, {
@@ -48,6 +51,12 @@ const ProseMirrorEditor = () => {
         doc,
         plugins: exampleSetup({ schema }),
       }),
+      nodeViews: {
+        table: (node, view, getPos) => {
+          console.log("Creating NodeView for table node:", node);
+          return new TableNodeView(node, view, getPos as () => number);
+        },
+      },
       dispatchTransaction(transaction) {
         // 你必须要手动更新状态 否则 用户的输入不会生效
         const newState = view.state.apply(transaction);
