@@ -1,0 +1,74 @@
+/* 表格样式 */
+.ProseMirror table {
+  border-collapse: collapse;
+  table-layout: fixed;
+  width: 100%;
+  overflow: hidden;
+  margin: 1em 0;
+}
+
+.ProseMirror td,
+.ProseMirror th {
+  min-width: 1em;
+  border: 2px solid #ced4da;
+  padding: 8px;
+  vertical-align: top;
+  box-sizing: border-box;
+  position: relative;
+}
+
+.ProseMirror th {
+  font-weight: bold;
+  text-align: left;
+  background-color: #f8f9fa;
+}
+
+.ProseMirror .selectedCell:after {
+  z-index: 2;
+  position: absolute;
+  content: "";
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  background: rgba(200, 200, 255, 0.4);
+  pointer-events: none;
+}
+
+.ProseMirror .column-resize-handle {
+  position: absolute;
+  right: -2px;
+  top: 0;
+  bottom: -2px;
+  width: 4px;
+  background-color: #adf;
+  pointer-events: none;
+}
+
+.ProseMirror.resize-cursor {
+  cursor: ew-resize;
+  cursor: col-resize;
+}
+
+/* 确保表格在段落中正确显示 */
+.ProseMirror table p {
+  margin: 0;
+}
+
+/* 表格工具提示和菜单样式 */
+.tableWrapper {
+  overflow-x: auto;
+  margin: 1em 0;
+}
+
+/* 确保表格响应式 */
+@media (max-width: 768px) {
+  .ProseMirror table {
+    font-size: 14px;
+  }
+
+  .ProseMirror td,
+  .ProseMirror th {
+    padding: 6px;
+  }
+}
